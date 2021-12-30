@@ -1,9 +1,11 @@
 import numpy as np
 from plots.show_batch import show_batch
 
+from hyperparameters.get_hyperparameter import get_hyperparameter
+
 
 def test_input_pipeline(train_ds, val_ds, standardize=False, show_images=True):
-
+    CLASSES = get_hyperparameter("CLASSES")
     divide_by = 255 if standardize else 1
 
     image_batch, label_batch = next(iter(train_ds))
@@ -15,7 +17,10 @@ def test_input_pipeline(train_ds, val_ds, standardize=False, show_images=True):
     label_batch = label_batch.numpy()
 
     assert label_batch[0].dtype == "int32"
-    assert label_batch[0] == 0 or label_batch[0] == 1
+
+    for i in range(0, len(label_batch)):
+        i = label_batch[i]
+        assert i in [int(x) for x in CLASSES.keys()]
 
     assert image_batch[0].dtype == "float32"
 
@@ -34,7 +39,9 @@ def test_input_pipeline(train_ds, val_ds, standardize=False, show_images=True):
     label_batch = label_batch.numpy()
 
     assert label_batch[0].dtype == "int32"
-    assert label_batch[0] == 0 or label_batch[0] == 1
+    for i in range(0, len(label_batch)):
+        i = label_batch[i]
+        assert i in [int(x) for x in CLASSES.keys()]
 
     assert image_batch[0].dtype == "float32"
     print("max val image", image_batch[0].max())

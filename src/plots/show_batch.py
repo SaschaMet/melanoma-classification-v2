@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+from utils.class_to_string import class_to_string
 
 
 def show_batch(image_batch, label_batch, show_title=True):
@@ -7,6 +8,6 @@ def show_batch(image_batch, label_batch, show_title=True):
         ax = plt.subplot(3, 3, n + 1)
         plt.imshow(image_batch[n])
         if show_title:
-            title = "Benign" if label_batch[n] == 0 else "Malignant"
+            title = class_to_string(label_batch[n])
             plt.title(title)
         plt.axis("off")

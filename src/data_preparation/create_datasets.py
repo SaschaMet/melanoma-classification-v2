@@ -6,6 +6,17 @@ from sklearn.model_selection import train_test_split
 from data_augmentation.augmentations import augment_image
 from hyperparameters.get_hyperparameter import get_hyperparameter
 
+CLASS_MAPPING = get_hyperparameter("CLASS_MAPPING")
+
+
+# creates helper utils for class mapping
+pred_fn_pairs = []
+for key in CLASS_MAPPING.keys():
+    # (tf.equal(label, -1), lambda: 0)
+    pred_fn_pairs.append(
+        (tf.equal(int(key), -1), lambda: int(CLASS_MAPPING[key]))
+    )
+
 
 def decode_image(image):
     image = tf.image.decode_jpeg(image, channels=3)
@@ -13,10 +24,21 @@ def decode_image(image):
     return image
 
 
+def map_classes(label):
+    label = tf.cast(label, dtype=tf.int32)
+    classes = tf.convert_to_tensor(
+        [int(x) for x in CLASS_MAPPING.keys()], dtype=tf.int32)
+    isInList = tf.reduce_any(tf.equal(label, classes), axis=-1)
+    return tf.cond(isInList,
+                   lambda: tf.case(pred_fn_pairs),
+                   lambda: label
+                   )
+
+
 def read_tfrecord(example, labeled):
     tfrecord_format = {
         "image": tf.io.FixedLenFeature([], tf.string),
-        "target": tf.io.FixedLenFeature([], tf.int64)
+        "diagnosis": tf.io.FixedLenFeature([], tf.int64)
     } if labeled else {
         "image": tf.io.FixedLenFeature([], tf.string),
         "image_name": tf.io.FixedLenFeature([], tf.string)
@@ -24,7 +46,8 @@ def read_tfrecord(example, labeled):
     example = tf.io.parse_single_example(example, tfrecord_format)
     image = decode_image(example['image'])
     if labeled:
-        label = tf.cast(example['target'], tf.int32)
+        label = tf.cast(example['diagnosis'], tf.int32)
+        label = map_classes(label)
         return image, label
     idnum = example['image_name']
     return image, idnum
@@ -76,8 +99,17 @@ def get_training_dataset(training_filenames, batch_size, augment=True, shuffle=T
     return dataset
 
 
-def get_validation_dataset(validation_filenames, batch_size, ordered=True):
+def get_validation_dataset(validation_filenames, batch_size, ordered=False, shuffle=False):
     dataset = load_dataset(validation_filenames, labeled=True, ordered=ordered)
+    REPLICAS = get_hyperparameter("REPLICAS")
+
+    if shuffle:
+        dataset = dataset.shuffle(
+            128 * REPLICAS, reshuffle_each_iteration=True)
+        opt = tf.data.Options()
+        opt.experimental_deterministic = False
+        dataset = dataset.with_options(opt)
+
     dataset = dataset.batch(batch_size)
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
     return dataset
@@ -101,6 +133,10 @@ def create_datasets(GCS_PATH_2020, GCS_PATH_19_18_17):
 
     test_filenames = tf.io.gfile.glob(GCS_PATH_2020 + '/test*.tfrec')
 
+    random.shuffle(training_filenames)
+    random.shuffle(training_filenames)
+    random.shuffle(training_filenames)
+
     training_filenames, validation_filenames = train_test_split(
         training_filenames, test_size=VALIDATION_SIZE, random_state=SEED)
     training_filenames = list(training_filenames)
@@ -111,13 +147,15 @@ def create_datasets(GCS_PATH_2020, GCS_PATH_19_18_17):
             raise Exception("TRAIN AND TEST FILES ARE NOT VALID!")
 
     random.shuffle(training_filenames)
+    random.shuffle(validation_filenames)
 
     print("training_filenames", len(training_filenames))
     print("validation_filenames", len(validation_filenames))
     print("test_filenames", len(test_filenames))
 
     train_ds = get_training_dataset(training_filenames, BATCH_SIZE)
-    val_ds = get_validation_dataset(validation_filenames, BATCH_SIZE)
+    val_ds = get_validation_dataset(
+        validation_filenames, BATCH_SIZE, ordered=False, shuffle=True)
     test_ds = get_test_dataset(test_filenames, BATCH_SIZE)
 
     return train_ds, val_ds, test_ds
